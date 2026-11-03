@@ -1,74 +1,58 @@
-# Bangla Text Sentiment Analysis
+# Bangla Emotion Classification
 
-This repository implements a classical-machine-learning pipeline for multi-label emotion classification of Bangla social-media comments. We address three main challenges—class imbalance, rich morphology, and subtle contextual cues—by combining five traditional classifiers in a soft-vote ensemble with per-label threshold calibration.
+Multi-label emotion classification of Bangla social-media comments with classical machine learning. Team project by Nidan Alam, Nazifa Tabassum Tandra and Fatema Akhter (2025).
 
+## Problem
 
-## 🔧 Features
+Each comment can carry any of six emotions: Love, Joy, Surprise, Anger, Sadness and Fear. The labels are imbalanced, with few Fear and Surprise examples.
 
-- **Preprocessing**  
-  - Unicode normalization (NFC)  
-  - HTML, URL, user-mention removal  
-  - Custom Bangla tokenizer  
-  - Stop-word removal & suffix-stripping stemming  
+## Data
 
-- **Feature Engineering**  
-  - Hybrid TF-IDF:  
-    - Word n-grams (1–3 grams)  
-    - Character n-grams (3–5 grams)  
-  - Combined → Min-Max scaling to [0,1]  
+`BanglaSentimentProject/data/`:
 
-- **Models**  
-  - Linear SVM, Logistic Regression, Random Forest, Naive Bayes, k-Nearest Neighbors  
-  - One-vs-Rest multi-label strategy  
-  - Hyperparameter tuning via 5-fold `GridSearchCV`  
+| File | Rows |
+| --- | --- |
+| `Train.csv` | 18,420 |
+| `Val.csv` | 2,047 |
+| `Test.csv` | 2,272 |
 
-- **Ensemble & Calibration**  
-  - Soft-vote ensemble of all five classifiers  
-  - Per-label probability threshold sweep (0.10–0.90, step 0.05) on validation set  
-  - Achieves **micro-F1 0.5827** and **macro-F1 0.4531** on the test set  
+Columns: ID, Data (comment text), the six emotion labels, Topic, Domain and is_admin.
 
-## 🚀 Quick Start
+## Method
 
-1. **Clone the repo**  
-   ```bash
-   git clone https://github.com/<your-username>/bangla-sentiment-analysis.git
-   cd bangla-sentiment-analysis
-Create and activate a virtual environment
+- **Cleaning** (`utils/preprocess.py`): HTML and URL removal, a regex tokenizer, stopword removal and light suffix stemming.
+- **Training** (`models/train.py`): admin, duplicate and unlabeled rows are dropped. Fear is oversampled to 1,000 examples, then each label is randomly oversampled. Features are word 1 to 3-gram TF-IDF (min_df 5, max_df 0.8), character 3 to 5-gram TF-IDF (5,000 features) and six standardised count features (negation words, adjective and adverb suffixes, lexicon polarity). The top 10,000 features are kept by chi-squared score.
+- **Models:** Linear SVM, Logistic Regression, Random Forest, k-Nearest Neighbours and Multinomial Naive Bayes, one binary classifier per label (`MultiOutputClassifier`). Each is grid-searched with 5-fold cross-validation on macro-F1 (grids in `utils/config.py`).
+- **Ensemble** (`test_no_mlp.py`): the per-label probabilities of the five models are averaged (a sigmoid of the decision function for the SVM). A threshold for each label is swept from 0.10 to 0.90 in steps of 0.01 on `Val.csv`, then the ensemble is scored on `Test.csv`. `test.py` does the same with an extra PyTorch MLP (`models/train_torch_mlp.py`).
 
-python3 -m venv venv
-source venv/bin/activate
-Install dependencies
+## Results
 
+On the test split, as reported by the team: micro-F1 0.5827, macro-F1 0.4531. Joy and Sadness reach F1 above 0.70; Surprise and Fear stay below 0.25. The run outputs were not saved in this repository.
 
-pip install -r requirements.txt
-Prepare your data
-Place your CSV splits in data/ (same format as the paper).
+## How to run
 
-Run preprocessing
+```bash
+cd BanglaSentimentProject
+pip install numpy pandas scipy scikit-learn imbalanced-learn joblib tqdm torch
+python models/train.py            # tunes the five models and saves them to models/
+python models/train_torch_mlp.py  # optional MLP
+python test_no_mlp.py             # thresholds on Val.csv, micro and macro F1 on Test.csv
+python test.py                    # same, with the MLP in the ensemble
+```
 
+`test_no_mlp.py` imports `models/train_torch_mlp.py`, so PyTorch is needed even without the MLP.
 
-python src/preprocess.py --input data/train.csv --output data/train_cleaned.csv
-Train & calibrate
+## Known issues
 
-python src/train.py --config src/config.yml
-python src/calibrate.py --model models/ensemble.pkl --val data/val_cleaned.csv
-Evaluate
+- The tokenizer's character range leaves out Bangla vowel signs, so words are split into fragments, and the negation, suffix and lexicon features never fire on this data. Fixing the range and re-running is expected to change the scores above.
 
+## Layout
 
-python src/evaluate.py --model models/ensemble_calibrated.pkl --test data/test_cleaned.csv
+- `BanglaSentimentProject/data/`: train, validation and test splits.
+- `BanglaSentimentProject/utils/`: configuration and preprocessing.
+- `BanglaSentimentProject/models/`: training scripts and the saved feature scaler.
+- `BanglaSentimentProject/test.py`, `test_no_mlp.py`: threshold calibration and evaluation.
 
-📈 Results
-Micro-F1: 0.5827
+## License
 
-Macro-F1: 0.4531
-
-Joy & Sadness F1 > 0.70; Surprise & Fear remain below 0.25 (class imbalance)
-
-🛠️ Future Work
-Integrate Bangla-BERT for contextual embeddings
-
-Data augmentation (oversampling, back-translation)
-
-Neural multi-label architectures (classifier chains, label correlations)
-
-Lexicon-enhanced features
+MIT (see `LICENSE.txt`).
